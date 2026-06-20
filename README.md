@@ -18,7 +18,8 @@ A patch script that adds **Chrome extension support** to an installed [Ferdium](
 ## Requirements
 
 - [Node.js](https://nodejs.org/) (any recent LTS)
-- Ferdium installed (Windows default path is auto-detected)
+- Ferdium installed — Windows, macOS, and Linux (deb/rpm) default paths are auto-detected
+  - AppImage / snap / flatpak builds on Linux are **not supported**
 
 ---
 
@@ -35,9 +36,19 @@ node apply-chrome-extensions-installed.js --check
 node apply-chrome-extensions-installed.js --revert
 ```
 
-On Windows you can also double-click **`apply-chrome-extensions-installed.bat`**.
+- Windows: double-click **`apply-chrome-extensions-installed.bat`**
+- macOS / Linux: `./apply-chrome-extensions-installed.sh`
 
 After the script finishes, **restart Ferdium**. A new "Extensions" entry appears in Settings.
+
+### macOS note
+
+Patching `app.asar` invalidates Ferdium's code signature. If macOS refuses
+to open Ferdium afterwards ("Ferdium is damaged"), run:
+
+```bash
+sudo codesign --force --deep --sign - /Applications/Ferdium.app
+```
 
 ---
 

@@ -13,22 +13,20 @@
  * 必要環境: Node.js (Ferdium と同じもの), @electron/asar (このスクリプトが自動インストール)
  */
 
-'use strict';
-
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { execSync } = require('child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const { execSync } = require('node:child_process');
 
 // ─── カラー出力 ───────────────────────────────────────────────────────────────
 const c = {
-  green:  s => `\x1b[32m${s}\x1b[0m`,
-  red:    s => `\x1b[31m${s}\x1b[0m`,
-  yellow: s => `\x1b[33m${s}\x1b[0m`,
-  cyan:   s => `\x1b[36m${s}\x1b[0m`,
-  bold:   s => `\x1b[1m${s}\x1b[0m`,
+  green: s => `\u001B[32m${s}\u001B[0m`,
+  red: s => `\u001B[31m${s}\u001B[0m`,
+  yellow: s => `\u001B[33m${s}\u001B[0m`,
+  cyan: s => `\u001B[36m${s}\u001B[0m`,
+  bold: s => `\u001B[1m${s}\u001B[0m`,
 };
-const ok   = m => console.log(c.green('  ✔ ') + m);
+const ok = m => console.log(c.green('  ✔ ') + m);
 const fail = m => console.log(c.red('  ✘ ') + m);
 const info = m => console.log(c.cyan('  → ') + m);
 const warn = m => console.log(c.yellow('  ! ') + m);
@@ -45,9 +43,12 @@ function requireAsar() {
     fs.mkdirSync(toolDir, { recursive: true });
     // package.json がないと npm がエラーになるため作成
     if (!fs.existsSync(path.join(toolDir, 'package.json'))) {
-      fs.writeFileSync(path.join(toolDir, 'package.json'), '{"name":"asar-tool","private":true}');
+      fs.writeFileSync(
+        path.join(toolDir, 'package.json'),
+        '{"name":"asar-tool","private":true}',
+      );
     }
-    execSync('npm install @electron/asar --save --prefix "' + toolDir + '"', {
+    execSync(`npm install @electron/asar --save --prefix "${toolDir}"`, {
       stdio: 'inherit',
       shell: true,
     });
@@ -60,31 +61,73 @@ function requireAsar() {
     const full = path.join(asarPath, entry);
     if (fs.existsSync(full)) return require(full);
   }
-  throw new Error('@electron/asar のエントリポイントが見つかりません: ' + asarPath);
+  throw new Error(
+    `@electron/asar のエントリポイントが見つかりません: ${asarPath}`,
+  );
 }
 
 // ─── Ferdium のインストール場所を探す ─────────────────────────────────────────
 function findFerdiumAsar() {
-  const candidates = [
-    path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'ferdium', 'resources', 'app.asar'),
-    path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Ferdium', 'resources', 'app.asar'),
-    'C:\\Program Files\\Ferdium\\resources\\app.asar',
-    'C:\\Program Files (x86)\\Ferdium\\resources\\app.asar',
-  ];
+  let candidates = [];
 
-  // レジストリからも探す (Windows)
   if (process.platform === 'win32') {
+    candidates = [
+      path.join(
+        os.homedir(),
+        'AppData',
+        'Local',
+        'Programs',
+        'ferdium',
+        'resources',
+        'app.asar',
+      ),
+      path.join(
+        os.homedir(),
+        'AppData',
+        'Local',
+        'Programs',
+        'Ferdium',
+        'resources',
+        'app.asar',
+      ),
+      'C:\\Program Files\\Ferdium\\resources\\app.asar',
+      'C:\\Program Files (x86)\\Ferdium\\resources\\app.asar',
+    ];
+
+    // レジストリからも探す (Windows)
     try {
       const out = execSync(
         'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall" /s /f "Ferdium" /t REG_SZ 2>nul',
-        { encoding: 'utf8' }
+        { encoding: 'utf8' },
       );
       const m = out.match(/DisplayIcon\s+REG_SZ\s+(.+?)(?:,\d+)?\r?\n/);
       if (m) {
         const exePath = m[1].trim();
-        candidates.unshift(path.join(path.dirname(exePath), 'resources', 'app.asar'));
+        candidates.unshift(
+          path.join(path.dirname(exePath), 'resources', 'app.asar'),
+        );
       }
-    } catch (_) {}
+    } catch {}
+  } else if (process.platform === 'darwin') {
+    candidates = [
+      '/Applications/Ferdium.app/Contents/Resources/app.asar',
+      path.join(
+        os.homedir(),
+        'Applications',
+        'Ferdium.app',
+        'Contents',
+        'Resources',
+        'app.asar',
+      ),
+    ];
+  } else {
+    // Linux (deb/rpm/pacman 系。AppImage/snap/flatpak は未対応)
+    candidates = [
+      '/opt/Ferdium/resources/app.asar',
+      '/opt/ferdium/resources/app.asar',
+      '/usr/lib/ferdium/resources/app.asar',
+      '/usr/share/ferdium/resources/app.asar',
+    ];
   }
 
   for (const p of candidates) {
@@ -102,7 +145,7 @@ function readAsarFile(asarBuf, headerSize, header, filePath) {
     if (!node) return null;
   }
   if (node.files) return null; // ディレクトリ
-  const offset = 16 + headerSize + parseInt(node.offset);
+  const offset = 16 + headerSize + Number.parseInt(node.offset);
   return asarBuf.slice(offset, offset + node.size).toString('utf8');
 }
 
@@ -443,11 +486,12 @@ app.whenReady().then(function(){
     return extPath;
   });
 
-  ipcMain.handle('remove-extension',function(_,extPath){
+  ipcMain.handle('remove-extension',async function(_,extPath){
     const cfg=readConfig();
     cfg.paths=(cfg.paths||[]).filter(function(p){return p!==extPath;});
     cfg.disabled=(cfg.disabled||[]).filter(function(p){return p!==extPath;});
     writeConfig(cfg);
+    await unloadFromAllSessions(extPath);
   });
 
   // CWS URL または ID から拡張機能をインストール
@@ -597,7 +641,7 @@ function ExtensionsScreen(){
     },cfg.label);
   };
 
-  // ─── 本番UI: settings__main / settings__header / settings__body 構成 v11 ─────
+  // ─── 本番UI: settings__main / settings__header / settings__body 構成 v12 ─────
   return React.createElement('div',{className:'settings__main'},
 
     // ── ヘッダー（他の設定画面と同じ span.settings__header-item 構成）────────
@@ -759,30 +803,30 @@ exports.default=ExtensionsScreen;
 
 async function applyPatch(asarPath) {
   const asar = requireAsar();
-  const backupPath = asarPath + '.backup';
+  const backupPath = `${asarPath}.backup`;
 
   console.log('');
   console.log(c.bold('═══════════════════════════════════════════════════'));
   console.log(c.bold(' Chrome Extensions Patch for Ferdium (インストール版)'));
   console.log(c.bold('═══════════════════════════════════════════════════'));
   console.log('');
-  info('対象: ' + asarPath);
+  info(`対象: ${asarPath}`);
   console.log('');
 
   // バックアップ
-  if (!fs.existsSync(backupPath)) {
-    fs.copyFileSync(asarPath, backupPath);
-    ok('バックアップ作成: ' + path.basename(backupPath));
+  if (fs.existsSync(backupPath)) {
+    warn(`バックアップは既に存在します: ${path.basename(backupPath)}`);
   } else {
-    warn('バックアップは既に存在します: ' + path.basename(backupPath));
+    fs.copyFileSync(asarPath, backupPath);
+    ok(`バックアップ作成: ${path.basename(backupPath)}`);
   }
 
   // 一時ディレクトリに展開
-  const tmpDir = path.join(os.tmpdir(), 'ferdium-patch-' + Date.now());
+  const tmpDir = path.join(os.tmpdir(), `ferdium-patch-${Date.now()}`);
   console.log('');
   info('asar を展開中...');
   asar.extractAll(asarPath, tmpDir);
-  ok('展開完了: ' + tmpDir);
+  ok(`展開完了: ${tmpDir}`);
 
   let errors = 0;
 
@@ -791,14 +835,18 @@ async function applyPatch(asarPath) {
   console.log(c.bold('【新規ファイルの追加】'));
   {
     const mainFile = path.join(tmpDir, 'extensions-main.js');
-    const existing = fs.existsSync(mainFile) ? fs.readFileSync(mainFile, 'utf8') : '';
-    const isLatest = existing.includes(PATCH_MARKER)
-      && existing.includes('check-extension-updates')
-      && existing.includes('install-extension-by-id')
-      && existing.includes("input.split('/')")    // extractExtId の修正版を確認
-      && existing.includes('test(dirName)')        // CRX3 dirName フォールバック版を確認
-      && existing.includes('toggle-extension')      // 有効/無効トグル版を確認
-      && existing.includes('getAppMetrics');        // app.getAppMetrics() 版を確認
+    const existing = fs.existsSync(mainFile)
+      ? fs.readFileSync(mainFile, 'utf8')
+      : '';
+    const isLatest =
+      existing.includes(PATCH_MARKER) &&
+      existing.includes('check-extension-updates') &&
+      existing.includes('install-extension-by-id') &&
+      existing.includes("input.split('/')") && // extractExtId の修正版を確認
+      existing.includes('test(dirName)') && // CRX3 dirName フォールバック版を確認
+      existing.includes('toggle-extension') && // 有効/無効トグル版を確認
+      existing.includes('getAppMetrics') && // app.getAppMetrics() 版を確認
+      existing.includes("ipcMain.handle('remove-extension',async function"); // remove時unload版を確認
     if (isLatest) {
       warn('スキップ（最新版）: extensions-main.js');
     } else if (existing.includes(PATCH_MARKER)) {
@@ -812,24 +860,32 @@ async function applyPatch(asarPath) {
 
   // ── 2. ExtensionsScreen.js を追加（または更新） ────────────────────────────
   {
-    const destPath = path.join(tmpDir, 'containers/settings/ExtensionsScreen.js');
-    const existing = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : '';
-    const isLatest = existing.includes(PATCH_MARKER)
-      && existing.includes('check-extension-updates')
-      && existing.includes('install-extension-by-id')
-      && existing.includes("'settings__main'")             // CSS class 構成版の識別子
-      && existing.includes("'settings__body'")             // CSS class 構成版の識別子
-      && existing.includes("settings__body 構成 v11")      // バージョン識別子
-      && !existing.includes('DBG v3b')                    // デバッグ版でないことを確認
-      && !existing.includes('DBG v2');                    // デバッグ版でないことを確認
+    const destPath = path.join(
+      tmpDir,
+      'containers/settings/ExtensionsScreen.js',
+    );
+    const existing = fs.existsSync(destPath)
+      ? fs.readFileSync(destPath, 'utf8')
+      : '';
+    const isLatest =
+      existing.includes(PATCH_MARKER) &&
+      existing.includes('check-extension-updates') &&
+      existing.includes('install-extension-by-id') &&
+      existing.includes("'settings__main'") && // CSS class 構成版の識別子
+      existing.includes("'settings__body'") && // CSS class 構成版の識別子
+      existing.includes('settings__body 構成 v12') && // バージョン識別子
+      !existing.includes('DBG v3b') && // デバッグ版でないことを確認
+      !existing.includes('DBG v2'); // デバッグ版でないことを確認
     if (isLatest) {
       warn('スキップ（最新版）: containers/settings/ExtensionsScreen.js');
     } else {
       fs.mkdirSync(path.dirname(destPath), { recursive: true });
       fs.writeFileSync(destPath, EXTENSIONS_SCREEN_JS, 'utf8');
-      ok(existing.includes(PATCH_MARKER)
-        ? '更新: containers/settings/ExtensionsScreen.js'
-        : '作成: containers/settings/ExtensionsScreen.js');
+      ok(
+        existing.includes(PATCH_MARKER)
+          ? '更新: containers/settings/ExtensionsScreen.js'
+          : '作成: containers/settings/ExtensionsScreen.js',
+      );
     }
   }
 
@@ -842,7 +898,9 @@ async function applyPatch(asarPath) {
     if (content.includes(PATCH_MARKER)) {
       warn('スキップ（適用済み）: index.js — extensions-main の読み込み');
     } else if (content.startsWith('"use strict";')) {
-      content = `"use strict";require('./extensions-main');${PATCH_MARKER}\n` + content.slice('"use strict";'.length);
+      content = `"use strict";require('./extensions-main');${PATCH_MARKER}\n${content.slice(
+        '"use strict";'.length,
+      )}`;
       fs.writeFileSync(file, content, 'utf8');
       ok('パッチ適用: index.js — extensions-main の読み込み');
     } else {
@@ -856,72 +914,85 @@ async function applyPatch(asarPath) {
     const file = path.join(tmpDir, 'routes.js');
     let content = fs.readFileSync(file, 'utf8');
 
-    const hasOldEagerRequire = /var ExtScreen_=\{default:require\(/.test(content);
+    const hasOldEagerRequire = /var ExtScreen_={default:require\(/.test(
+      content,
+    );
     const hasExtensionsRoute = content.includes('/settings/extensions');
 
     if (hasExtensionsRoute && !hasOldEagerRequire) {
       // 正しいパッチ（遅延 require）が既に適用済み
       // ただし catch ブロックがエラー表示版でなければ更新する
       if (content.includes('catch(e_){return null}')) {
-        const jsxFnMatchInner = content.match(/\(0,([^(]+)\)\([^.]+\.Route,\{path:"\/settings\/extensions"/);
+        const jsxFnMatchInner = content.match(
+          /\(0,([^(]+)\)\([^.]+\.Route,{path:"\/settings\/extensions"/,
+        );
         const jsxFnInner = jsxFnMatchInner ? jsxFnMatchInner[1] : 'e.jsx';
-        content = content.replace(
-          /catch\(e_\)\{return null\}/g,
-          `catch(e_){console.error('[EXT-SCREEN]',e_);return (0,${jsxFnInner})('div',{style:{color:'#c00',padding:'16px',fontSize:'14px',fontFamily:'monospace',background:'#fff0f0',whiteSpace:'pre-wrap'}},String(e_))}`
+        content = content.replaceAll(
+          'catch(e_){return null}',
+          `catch(e_){console.error('[EXT-SCREEN]',e_);return (0,${jsxFnInner})('div',{style:{color:'#c00',padding:'16px',fontSize:'14px',fontFamily:'monospace',background:'#fff0f0',whiteSpace:'pre-wrap'}},String(e_))}`,
         );
         fs.writeFileSync(file, content, 'utf8');
         ok('更新: routes.js — catch を error-display に変更');
       } else {
         warn('スキップ（最新版）: routes.js — ExtensionsScreen ルート');
       }
-
     } else if (hasOldEagerRequire) {
       // 旧パッチの壊れた eager require を自動修正（--revert 不要）
-      info('routes.js: 旧パッチ（eager require）を検出 → 遅延 require に修正します');
+      info(
+        'routes.js: 旧パッチ（eager require）を検出 → 遅延 require に修正します',
+      );
 
       // a) トップレベルの var ExtScreen_=... を除去
-      content = content.replace(/var ExtScreen_=\{default:require\("[^"]+"\)\.default\};/, '');
+      content = content.replace(
+        /var ExtScreen_={default:require\("[^"]+"\)\.default};/,
+        '',
+      );
 
       if (hasExtensionsRoute) {
         // b-1) 既にルートはある: element だけ lazy function に差し替え
-        const jsxFnMatch = content.match(/\(0,([^(]+)\)\([^.]+\.Route,\{path:"\/settings\/extensions"/);
+        const jsxFnMatch = content.match(
+          /\(0,([^(]+)\)\([^.]+\.Route,{path:"\/settings\/extensions"/,
+        );
         const jsxFn = jsxFnMatch ? jsxFnMatch[1] : 'e.jsx';
         content = content.replace(
-          /element:\(0,[^(]+\)\(ExtScreen_\.default,\{\}\)/,
-          `element:(0,${jsxFn})(function(){try{return (0,${jsxFn})(require("./containers/settings/ExtensionsScreen").default,{})}catch(e_){console.error('[EXT-SCREEN]',e_);return (0,${jsxFn})('div',{style:{color:'#c00',padding:'16px',fontSize:'14px',fontFamily:'monospace',background:'#fff0f0',whiteSpace:'pre-wrap'}},String(e_))}},{})`
+          /element:\(0,[^(]+\)\(ExtScreen_\.default,{}\)/,
+          `element:(0,${jsxFn})(function(){try{return (0,${jsxFn})(require("./containers/settings/ExtensionsScreen").default,{})}catch(e_){console.error('[EXT-SCREEN]',e_);return (0,${jsxFn})('div',{style:{color:'#c00',padding:'16px',fontSize:'14px',fontFamily:'monospace',background:'#fff0f0',whiteSpace:'pre-wrap'}},String(e_))}},{})`,
         );
       } else {
         // b-2) ルートそのものもまだない: 新規挿入
-        const routeRe = /(\(0,[^(]+\)\([^.]+\.Route,\{path:"\/settings\/support",element:\(0,[^(]+\)\([^.]+\.default,\{\.\.\.this\.props\}\)\}\))/;
+        const routeRe =
+          /(\(0,[^(]+\)\([^.]+\.Route,{path:"\/settings\/support",element:\(0,[^(]+\)\([^.]+\.default,{\.\.\.this\.props}\)}\))/;
         const routeMatch = content.match(routeRe);
-        if (!routeMatch) {
-          fail('パッチ失敗: routes.js — "/settings/support" Route が見つかりません（バージョン変更？）');
-          errors++;
-        } else {
+        if (routeMatch) {
           const supportRoute = routeMatch[1];
           const jsxFnMatch = supportRoute.match(/\(0,([^(]+)\)\([^.]+\.Route/);
           const jsxFn = jsxFnMatch ? jsxFnMatch[1] : 'e.jsx';
           const extensionsRoute = supportRoute
             .replace('"/settings/support"', '"/settings/extensions"')
             .replace(
-              /element:\(0,[^(]+\)\([^.]+\.default,\{\.\.\.this\.props\}\)/,
-              `element:(0,${jsxFn})(function(){try{return (0,${jsxFn})(require("./containers/settings/ExtensionsScreen").default,{})}catch(e_){console.error('[EXT-SCREEN]',e_);return (0,${jsxFn})('div',{style:{color:'#c00',padding:'16px',fontSize:'14px',fontFamily:'monospace',background:'#fff0f0',whiteSpace:'pre-wrap'}},String(e_))}},{})`
+              /element:\(0,[^(]+\)\([^.]+\.default,{\.{3}this\.props}\)/,
+              `element:(0,${jsxFn})(function(){try{return (0,${jsxFn})(require("./containers/settings/ExtensionsScreen").default,{})}catch(e_){console.error('[EXT-SCREEN]',e_);return (0,${jsxFn})('div',{style:{color:'#c00',padding:'16px',fontSize:'14px',fontFamily:'monospace',background:'#fff0f0',whiteSpace:'pre-wrap'}},String(e_))}},{})`,
             );
-          content = content.replace(supportRoute, extensionsRoute + ',' + supportRoute);
+          content = content.replace(
+            supportRoute,
+            `${extensionsRoute},${supportRoute}`,
+          );
+        } else {
+          fail(
+            'パッチ失敗: routes.js — "/settings/support" Route が見つかりません（バージョン変更？）',
+          );
+          errors++;
         }
       }
       fs.writeFileSync(file, content, 'utf8');
       ok('修正完了: routes.js — 遅延 require に変換');
-
     } else {
       // 未適用: 新規パッチ適用
-      const routeRe = /(\(0,[^(]+\)\([^.]+\.Route,\{path:"\/settings\/support",element:\(0,[^(]+\)\([^.]+\.default,\{\.\.\.this\.props\}\)\}\))/;
+      const routeRe =
+        /(\(0,[^(]+\)\([^.]+\.Route,{path:"\/settings\/support",element:\(0,[^(]+\)\([^.]+\.default,{\.\.\.this\.props}\)}\))/;
       const routeMatch = content.match(routeRe);
 
-      if (!routeMatch) {
-        fail('パッチ失敗: routes.js — "/settings/support" Route が見つかりません（バージョン変更？）');
-        errors++;
-      } else {
+      if (routeMatch) {
         const supportRoute = routeMatch[1];
         // JSX ランタイムの変数名を support Route から抽出 (例: "e.jsx")
         // ★ require はファイル先頭で eager ロードせず、Route の element 内で遅延評価する。
@@ -932,19 +1003,30 @@ async function applyPatch(asarPath) {
         const extensionsRoute = supportRoute
           .replace('"/settings/support"', '"/settings/extensions"')
           .replace(
-            /element:\(0,[^(]+\)\([^.]+\.default,\{\.\.\.this\.props\}\)/,
-            `element:(0,${jsxFn})(function(){try{return (0,${jsxFn})(require("./containers/settings/ExtensionsScreen").default,{})}catch(e_){console.error('[EXT-SCREEN]',e_);return (0,${jsxFn})('div',{style:{color:'#c00',padding:'16px',fontSize:'14px',fontFamily:'monospace',background:'#fff0f0',whiteSpace:'pre-wrap'}},String(e_))}},{})`
+            /element:\(0,[^(]+\)\([^.]+\.default,{\.{3}this\.props}\)/,
+            `element:(0,${jsxFn})(function(){try{return (0,${jsxFn})(require("./containers/settings/ExtensionsScreen").default,{})}catch(e_){console.error('[EXT-SCREEN]',e_);return (0,${jsxFn})('div',{style:{color:'#c00',padding:'16px',fontSize:'14px',fontFamily:'monospace',background:'#fff0f0',whiteSpace:'pre-wrap'}},String(e_))}},{})`,
           );
-        content = content.replace(supportRoute, extensionsRoute + ',' + supportRoute);
+        content = content.replace(
+          supportRoute,
+          `${extensionsRoute},${supportRoute}`,
+        );
         fs.writeFileSync(file, content, 'utf8');
         ok('パッチ適用: routes.js — ExtensionsScreen ルート（遅延 require）');
+      } else {
+        fail(
+          'パッチ失敗: routes.js — "/settings/support" Route が見つかりません（バージョン変更？）',
+        );
+        errors++;
       }
     }
   }
 
   // ── 5. SettingsNavigation.js に Extensions を追加 ─────────────────────────
   {
-    const file = path.join(tmpDir, 'components/settings/navigation/SettingsNavigation.js');
+    const file = path.join(
+      tmpDir,
+      'components/settings/navigation/SettingsNavigation.js',
+    );
     let content = fs.readFileSync(file, 'utf8');
     if (content.includes('settings.navigation.extensions')) {
       warn('スキップ（適用済み）: SettingsNavigation.js — Extensions リンク');
@@ -955,26 +1037,36 @@ async function applyPatch(asarPath) {
       const navEndMarker = 'r.releaseNotes)})'; // NavLink の末尾（安定した文字列）
       const navStartSearch = 'to:"/settings/releasenotes"';
 
-      if (!content.includes(msgTarget) || !content.includes(navStartSearch) || !content.includes(navEndMarker)) {
-        fail('パッチ失敗: SettingsNavigation.js — 挿入点が見つかりません（バージョン変更？）');
+      if (
+        !content.includes(msgTarget) ||
+        !content.includes(navStartSearch) ||
+        !content.includes(navEndMarker)
+      ) {
+        fail(
+          'パッチ失敗: SettingsNavigation.js — 挿入点が見つかりません（バージョン変更？）',
+        );
         errors++;
       } else {
         // NavLink の開始位置を特定（to:"/settings/releasenotes" の手前の "(0," を探す）
         const toIdx = content.indexOf(navStartSearch);
         const startIdx = content.lastIndexOf('(0,', toIdx);
-        const endIdx = content.indexOf(navEndMarker, toIdx) + navEndMarker.length;
+        const endIdx =
+          content.indexOf(navEndMarker, toIdx) + navEndMarker.length;
         const releaseNotesNavLink = content.slice(startIdx, endIdx);
 
         // メッセージ定義を追加（releaseNotes の前に extensions を追加）
         content = content.replace(
           msgTarget,
-          `extensions:{id:"settings.navigation.extensions",defaultMessage:"Extensions"},releaseNotes:{id:"settings.navigation.releaseNotes"`
+          `extensions:{id:"settings.navigation.extensions",defaultMessage:"Extensions"},releaseNotes:{id:"settings.navigation.releaseNotes"`,
         );
         // releaseNotes NavLink をコピーして extensions 用に書き換え、前に挿入
         const extensionsNavLink = releaseNotesNavLink
           .replace('"/settings/releasenotes"', '"/settings/extensions"')
           .replace('r.releaseNotes', 'r.extensions');
-        content = content.replace(releaseNotesNavLink, extensionsNavLink + ',' + releaseNotesNavLink);
+        content = content.replace(
+          releaseNotesNavLink,
+          `${extensionsNavLink},${releaseNotesNavLink}`,
+        );
         fs.writeFileSync(file, content, 'utf8');
         ok('パッチ適用: SettingsNavigation.js — Extensions リンク');
       }
@@ -985,13 +1077,13 @@ async function applyPatch(asarPath) {
   console.log('');
   if (errors > 0) {
     fail(`${errors} 件のパッチが失敗しました。asar は更新されません。`);
-    info('一時ディレクトリを削除: ' + tmpDir);
+    info(`一時ディレクトリを削除: ${tmpDir}`);
     fs.rmSync(tmpDir, { recursive: true, force: true });
     process.exit(1);
   }
 
   info('asar を再梱包中...');
-  const unpackedDir = asarPath + '.unpacked';
+  const unpackedDir = `${asarPath}.unpacked`;
   const unpackedGlob = fs.existsSync(unpackedDir)
     ? '{node_modules/**,assets/**,recipes/**}'
     : undefined;
@@ -1006,7 +1098,18 @@ async function applyPatch(asarPath) {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 
   console.log('');
-  console.log(c.green(c.bold('✔ パッチ適用完了！ Ferdium を再起動してください。')));
+  console.log(
+    c.green(c.bold('✔ パッチ適用完了！ Ferdium を再起動してください。')),
+  );
+  if (process.platform === 'darwin') {
+    console.log('');
+    warn('macOS ではコード署名が壊れるため、起動時に');
+    warn('「壊れているため開けません」と表示される場合があります。');
+    warn('その場合は以下を実行してください:');
+    console.log(
+      c.cyan(`  sudo codesign --force --deep --sign - "${asarPath.replace(/\/Contents\/Resources\/app\.asar$/, '')}"`),
+    );
+  }
   console.log('');
 }
 
@@ -1014,7 +1117,7 @@ function checkPatch(asarPath) {
   console.log('');
   console.log(c.bold('【適用状況の確認】'));
   console.log('');
-  info('対象: ' + asarPath);
+  info(`対象: ${asarPath}`);
   console.log('');
 
   const buf = fs.readFileSync(asarPath);
@@ -1024,20 +1127,41 @@ function checkPatch(asarPath) {
   function readFile(filePath) {
     const parts = filePath.split('/').filter(Boolean);
     let node = header;
-    for (const k of parts) { node = node.files?.[k]; if (!node) return null; }
+    for (const k of parts) {
+      node = node.files?.[k];
+      if (!node) return null;
+    }
     if (node.files) return null;
-    const offset = 16 + hs + parseInt(node.offset);
+    const offset = 16 + hs + Number.parseInt(node.offset);
     return buf.slice(offset, offset + node.size).toString('utf8');
   }
 
   const checks = [
-    { path: 'extensions-main.js',           marker: PATCH_MARKER,                         desc: 'extensions-main.js' },
-    { path: 'index.js',                     marker: PATCH_MARKER,                         desc: 'index.js の require 注入' },
-    { path: 'routes.js',                    marker: '/settings/extensions',               desc: 'routes.js の Extension ルート' },
-    { path: 'components/settings/navigation/SettingsNavigation.js',
-                                            marker: 'settings.navigation.extensions',     desc: 'SettingsNavigation の Extensions リンク' },
-    { path: 'containers/settings/ExtensionsScreen.js',
-                                            marker: 'ExtensionsScreen',                   desc: 'ExtensionsScreen コンテナ（自己完結版）' },
+    {
+      path: 'extensions-main.js',
+      marker: PATCH_MARKER,
+      desc: 'extensions-main.js',
+    },
+    {
+      path: 'index.js',
+      marker: PATCH_MARKER,
+      desc: 'index.js の require 注入',
+    },
+    {
+      path: 'routes.js',
+      marker: '/settings/extensions',
+      desc: 'routes.js の Extension ルート',
+    },
+    {
+      path: 'components/settings/navigation/SettingsNavigation.js',
+      marker: 'settings.navigation.extensions',
+      desc: 'SettingsNavigation の Extensions リンク',
+    },
+    {
+      path: 'containers/settings/ExtensionsScreen.js',
+      marker: 'ExtensionsScreen',
+      desc: 'ExtensionsScreen コンテナ（自己完結版）',
+    },
   ];
 
   for (const ck of checks) {
@@ -1050,16 +1174,16 @@ function checkPatch(asarPath) {
 }
 
 function revertPatch(asarPath) {
-  const backupPath = asarPath + '.backup';
+  const backupPath = `${asarPath}.backup`;
   console.log('');
   console.log(c.bold('【パッチを元に戻す】'));
   console.log('');
   if (!fs.existsSync(backupPath)) {
-    fail('バックアップが見つかりません: ' + backupPath);
+    fail(`バックアップが見つかりません: ${backupPath}`);
     process.exit(1);
   }
   fs.copyFileSync(backupPath, asarPath);
-  ok('復元完了: ' + path.basename(asarPath));
+  ok(`復元完了: ${path.basename(asarPath)}`);
   console.log('');
   console.log(c.green('元に戻しました。Ferdium を再起動してください。'));
   console.log('');
@@ -1073,12 +1197,19 @@ function revertPatch(asarPath) {
   if (!asarPath) {
     fail('Ferdium のインストールが見つかりません。');
     fail('以下のいずれかにインストールしてください:');
-    fail('  %LOCALAPPDATA%\\Programs\\ferdium\\');
-    fail('  C:\\Program Files\\Ferdium\\');
+    if (process.platform === 'win32') {
+      fail('  %LOCALAPPDATA%\\Programs\\ferdium\\');
+      fail('  C:\\Program Files\\Ferdium\\');
+    } else if (process.platform === 'darwin') {
+      fail('  /Applications/Ferdium.app');
+    } else {
+      fail('  /opt/Ferdium/');
+      fail('  ※ AppImage / snap / flatpak 版は未対応です');
+    }
     process.exit(1);
   }
 
-  if (arg === '--check')        checkPatch(asarPath);
-  else if (arg === '--revert')  revertPatch(asarPath);
-  else                          await applyPatch(asarPath);
+  if (arg === '--check') checkPatch(asarPath);
+  else if (arg === '--revert') revertPatch(asarPath);
+  else await applyPatch(asarPath);
 })();
