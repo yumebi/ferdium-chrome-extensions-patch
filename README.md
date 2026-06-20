@@ -15,6 +15,14 @@ A patch script that adds **Chrome extension support** to an installed [Ferdium](
 
 ---
 
+## Download
+
+Grab the latest `apply-chrome-extensions-installed.js` (+ `.bat` / `.sh` launcher)
+from the [Releases page](https://github.com/yumebi/ferdium-chrome-extensions-patch/releases/latest) —
+no need to clone the repo. A new release is cut automatically on every push to `main`.
+
+---
+
 ## Requirements
 
 - [Node.js](https://nodejs.org/) (any recent LTS)
