@@ -26,3 +26,4 @@ jobs:
           files: |
             apply-chrome-extensions-installed.js
             apply-chrome-extensions-installed.bat
+            apply-chrome-extensions-installed.sh
