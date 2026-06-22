@@ -15,22 +15,6 @@ A patch script that adds **Chrome extension support** to an installed [Ferdium](
 
 ---
 
-## Download
-
-Grab the latest `apply-chrome-extensions-installed.js` (+ `.bat` / `.sh` launcher)
-from the [Releases page](https://github.com/yumebi/ferdium-chrome-extensions-patch/releases/latest) —
-no need to clone the repo. A new release is cut automatically on every push to `main`.
-
----
-
-## Requirements
-
-- [Node.js](https://nodejs.org/) (any recent LTS)
-- Ferdium installed — Windows, macOS, and Linux (deb/rpm) default paths are auto-detected
-  - AppImage / snap / flatpak builds on Linux are **not supported**
-
----
-
 ## Usage
 
 ```bash
@@ -57,6 +41,25 @@ to open Ferdium afterwards ("Ferdium is damaged"), run:
 ```bash
 sudo codesign --force --deep --sign - /Applications/Ferdium.app
 ```
+
+---
+
+## Requirements
+
+- [Node.js](https://nodejs.org/) (any recent LTS)
+- Ferdium installed — Windows, macOS, and Linux (deb/rpm) default paths are auto-detected
+  - AppImage / snap / flatpak builds on Linux are **not supported**
+
+---
+
+## Tech stack
+
+| Aspect | Detail |
+|---|---|
+| Language | Node.js (built-in modules only, no npm dependencies) |
+| Target runtime | Electron + React (Ferdium's bundled runtime) |
+| Patch format | Electron `asar` archive (extract → inject → repack) |
+| CI/CD | GitHub Actions (auto release on every push to `main`) |
 
 ---
 
@@ -93,6 +96,14 @@ Extension paths and disabled state are stored in:
 
 ---
 
+## Download
+
+Grab the latest `apply-chrome-extensions-installed.js` (+ `.bat` / `.sh` launcher)
+from the [Releases page](https://github.com/yumebi/ferdium-chrome-extensions-patch/releases/latest) —
+no need to clone the repo. A new release is cut automatically on every push to `main`.
+
+---
+
 ## License
 
-MIT
+[MIT License](LICENSE)
